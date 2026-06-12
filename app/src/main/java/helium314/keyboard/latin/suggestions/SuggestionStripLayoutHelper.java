@@ -222,61 +222,55 @@ final class SuggestionStripLayoutHelper {
      *         Negative integer if the word of the index shouldn't be shown on the suggestion strip.
      */
     private int getPositionInSuggestionStrip(final int indexInSuggestedWords,
-            final SuggestedWords suggestedWords) {
+                                             final SuggestedWords suggestedWords) {
+
         final SettingsValues settingsValues = Settings.getValues();
         final boolean shouldOmitTypedWord = shouldOmitTypedWord(suggestedWords.mInputStyle,
-                settingsValues.mGestureFloatingPreviewTextEnabled, true);
+            settingsValues.mGestureFloatingPreviewTextEnabled, true);
+
         return getPositionInSuggestionStrip(indexInSuggestedWords, suggestedWords.mWillAutoCorrect,
-                shouldOmitTypedWord, mCenterPositionInStrip, mTypedWordPositionWhenAutocorrect);
+            shouldOmitTypedWord, mCenterPositionInStrip, mTypedWordPositionWhenAutocorrect);
     }
 
     static boolean shouldOmitTypedWord(final int inputStyle,
             final boolean gestureFloatingPreviewTextEnabled,
             final boolean shouldShowUiToAcceptTypedWord) {
-        final boolean omitTypedWord = (inputStyle == SuggestedWords.INPUT_STYLE_TYPING)
-                || (inputStyle == SuggestedWords.INPUT_STYLE_TAIL_BATCH)
-                || (inputStyle == SuggestedWords.INPUT_STYLE_UPDATE_BATCH && gestureFloatingPreviewTextEnabled);
-        return shouldShowUiToAcceptTypedWord && omitTypedWord;
+        //Removed Implementation
+//        final boolean omitTypedWord = (inputStyle == SuggestedWords.INPUT_STYLE_TYPING)
+//                || (inputStyle == SuggestedWords.INPUT_STYLE_TAIL_BATCH)
+//                || (inputStyle == SuggestedWords.INPUT_STYLE_UPDATE_BATCH && gestureFloatingPreviewTextEnabled);
+        return false;
     }
 
     static int getPositionInSuggestionStrip(final int indexInSuggestedWords,
-            final boolean willAutoCorrect, final boolean omitTypedWord,
-            final int centerPositionInStrip, final int typedWordPositionWhenAutoCorrect) {
-        if (omitTypedWord) {
-            if (indexInSuggestedWords == SuggestedWords.INDEX_OF_TYPED_WORD) {
-                // Ignore.
-                return -1;
-            }
-            if (indexInSuggestedWords == SuggestedWords.INDEX_OF_AUTO_CORRECTION) {
-                // Center in the suggestion strip.
-                return centerPositionInStrip;
-            }
-            // If neither of those, the order in the suggestion strip is left of the center first
-            // then right of the center, to both edges of the suggestion strip.
-            // For example, center-1, center+1, center-2, center+2, and so on.
-            final int offsetFromCenter = (indexInSuggestedWords % 2) == 0 ? -(indexInSuggestedWords / 2) : (indexInSuggestedWords / 2);
-            return centerPositionInStrip + offsetFromCenter;
-        }
-        final int indexToDisplayMostImportantSuggestion;
-        final int indexToDisplaySecondMostImportantSuggestion;
+                                            final boolean willAutoCorrect, final boolean omitTypedWord,
+                                            final int centerPositionInStrip, final int typedWordPositionWhenAutoCorrect) {
+
+        // Determine who gets the center spot and who gets pushed to the side
+        final int centerSpot;
+        final int sideSpot;
+
         if (willAutoCorrect) {
-            indexToDisplayMostImportantSuggestion = SuggestedWords.INDEX_OF_AUTO_CORRECTION;
-            indexToDisplaySecondMostImportantSuggestion = SuggestedWords.INDEX_OF_TYPED_WORD;
+            // The typed word is invalid: Auto-Correction gets the center
+            centerSpot = SuggestedWords.INDEX_OF_AUTO_CORRECTION;
+            sideSpot = SuggestedWords.INDEX_OF_TYPED_WORD;
         } else {
-            indexToDisplayMostImportantSuggestion = SuggestedWords.INDEX_OF_TYPED_WORD;
-            indexToDisplaySecondMostImportantSuggestion = SuggestedWords.INDEX_OF_AUTO_CORRECTION;
+            // The typed word is valid: Typed Word gets the center
+            centerSpot = SuggestedWords.INDEX_OF_TYPED_WORD;
+            sideSpot = SuggestedWords.INDEX_OF_AUTO_CORRECTION;
         }
-        if (indexInSuggestedWords == indexToDisplayMostImportantSuggestion) {
-            // Center in the suggestion strip.
+
+        // 1. Assign the designated winner to the center position
+        if (indexInSuggestedWords == centerSpot) {
             return centerPositionInStrip;
         }
-        if (indexInSuggestedWords == indexToDisplaySecondMostImportantSuggestion) {
-            // Center-1.
+
+        // 2. Assign the runner-up to the side position
+        if (indexInSuggestedWords == sideSpot) {
             return typedWordPositionWhenAutoCorrect;
         }
-        // If neither of those, the order in the suggestion strip is right of the center first
-        // then left of the center, to both edges of the suggestion strip.
-        // For example, Center+1, center-2, center+2, center-3, and so on.
+
+        // 3. Alternate all remaining dictionary suggestions (index 2+) safely around them
         final int n = indexInSuggestedWords + 1;
         final int offsetFromCenter = (n % 2) == 0 ? -(n / 2) : (n / 2);
         return centerPositionInStrip + offsetFromCenter;
@@ -469,10 +463,20 @@ final class SuggestionStripLayoutHelper {
         }
         int count = 0;
         int indexInSuggestedWords;
+        int effectiveIndex = 0;
         for (indexInSuggestedWords = 0; indexInSuggestedWords < suggestedWords.size()
                 && count < maxSuggestionInStrip; indexInSuggestedWords++) {
+
+            // Ignore Typed word duplicate
+            if (indexInSuggestedWords > SuggestedWords.INDEX_OF_TYPED_WORD) {
+                if (TextUtils.equals(suggestedWords.getWord(indexInSuggestedWords),
+                    suggestedWords.getWord(SuggestedWords.INDEX_OF_TYPED_WORD))) {
+                    continue;
+                }
+            }
+
             final int positionInStrip =
-                    getPositionInSuggestionStrip(indexInSuggestedWords, suggestedWords);
+                    getPositionInSuggestionStrip(effectiveIndex, suggestedWords);
             if (positionInStrip < 0) {
                 continue;
             }
@@ -486,9 +490,10 @@ final class SuggestionStripLayoutHelper {
             if (SuggestionStripView.DEBUG_SUGGESTIONS) {
                 mDebugInfoViews.get(positionInStrip).setText(suggestedWords.getDebugString(indexInSuggestedWords));
             }
+            effectiveIndex++;
             count++;
         }
-        return indexInSuggestedWords;
+        return effectiveIndex;
     }
 
     private int layoutPunctuationsAndReturnStartIndexOfMoreSuggestions(

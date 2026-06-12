@@ -99,10 +99,7 @@ public class SuggestedWords {
      * @return the count of suggested word to show as suggestions to UI.
      */
     public int getWordCountToShow() {
-        if (isPrediction()) {
-            return size();
-        }
-        return size() - /* typed word */ 1;
+        return size();
     }
 
     /**
