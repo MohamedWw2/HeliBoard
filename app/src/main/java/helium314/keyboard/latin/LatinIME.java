@@ -60,6 +60,7 @@ import helium314.keyboard.latin.common.Constants;
 import helium314.keyboard.latin.common.CoordinateUtils;
 import helium314.keyboard.latin.common.InputPointers;
 import helium314.keyboard.latin.common.ViewOutlineProviderUtilsKt;
+import helium314.keyboard.latin.common.StringUtilsKt;
 import helium314.keyboard.latin.define.DebugFlags;
 import helium314.keyboard.latin.inputlogic.InputLogic;
 import helium314.keyboard.latin.personalization.PersonalizationHelper;
@@ -79,12 +80,14 @@ import helium314.keyboard.latin.utils.JniUtils;
 import helium314.keyboard.latin.utils.KtxKt;
 import helium314.keyboard.latin.utils.LeakGuardHandlerWrapper;
 import helium314.keyboard.latin.utils.Log;
+import helium314.keyboard.latin.utils.BackgroundGatheringCache;
 import helium314.keyboard.latin.utils.RecapitalizeMode;
 import helium314.keyboard.latin.utils.StatsUtils;
 import helium314.keyboard.latin.utils.StatsUtilsManager;
 import helium314.keyboard.latin.utils.SubtypeLocaleUtils;
 import helium314.keyboard.latin.utils.SubtypeSettings;
 import helium314.keyboard.latin.utils.SubtypeState;
+import helium314.keyboard.latin.utils.TextRange;
 import helium314.keyboard.latin.utils.ToolbarMode;
 import helium314.keyboard.settings.SettingsActivity2;
 import kotlin.Unit;
@@ -793,11 +796,13 @@ public class LatinIME extends InputMethodService implements
         mHandler.onFinishInputView(finishingInput);
         mStatsUtilsManager.onFinishInputView();
         mGestureConsumer = GestureConsumer.NULL_GESTURE_CONSUMER;
+        BackgroundGatheringCache.saveOrClear(this);
     }
 
     @Override
     public void onFinishInput() {
         mHandler.onFinishInput();
+        BackgroundGatheringCache.saveOrClear(this);
     }
 
     @Override
@@ -849,7 +854,7 @@ public class LatinIME extends InputMethodService implements
     void onStartInputViewInternal(final EditorInfo editorInfo, final boolean restarting) {
         super.onStartInputView(editorInfo, restarting);
 
-        setGestureDataGatheringMode(editorInfo);
+        setGestureDataGatheringMode(editorInfo, restarting);
 
         mDictionaryFacilitator.onStartInput();
         // Switch to the null consumer to handle cases leading to early exit below, for which we
@@ -1883,12 +1888,21 @@ public class LatinIME extends InputMethodService implements
         }
     }
 
-    private void setGestureDataGatheringMode(EditorInfo editorInfo) {
-        // only for active gesture data gathering, remove when data gathering phase is done (end of 2026 latest)
+    public void setGestureDataGatheringMode(EditorInfo editorInfo, boolean restarting) {
+        // only for gesture data gathering, remove when data gathering phase is done (end of 2026 latest)
         if (GestureDataGatheringSettings.INSTANCE.isInActiveGatheringMode(editorInfo)) {
             mDictionaryFacilitator = GestureDataGatheringKt.getGestureDataActiveFacilitator();
+            GestureDataGatheringKt.useBackgroundGathering = false;
+            mKeyboardSwitcher.setBackgroundGatheringIndicator(false, false, false);
         } else {
             mDictionaryFacilitator = mOriginalDictionaryFacilitator;
+
+            // no active mode, check for background mode
+            boolean useBackground = GestureDataGatheringKt.setUseBackgroundGathering(this, editorInfo);
+            mKeyboardSwitcher.setBackgroundGatheringIndicator(useBackground, false, false);
+            // restarting means we're still in the same field, so don't clear anything in discard-by-default mode
+            if (!restarting || !GestureDataGatheringSettings.INSTANCE.isDiscardByDefault(this))
+                BackgroundGatheringCache.saveOrClear(this);
         }
         GestureDataGatheringSettings.INSTANCE.showEndNotificationIfNecessary(this); // will do nothing for a long time
         mInputLogic.setFacilitator(mDictionaryFacilitator);
